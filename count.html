@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Finger Counting with Webcam</title>
+  <!-- Load MediaPipe Hands and TensorFlow.js libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+  <style>
+    body { margin: 0; padding: 0; overflow: hidden; }
+    #canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    /* Fixed container for finger count in top-right corner */
+    #fingerCount {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 60px;
+      height: 60px;
+      background: rgba(0, 0, 0, 0.5);
+      color: #fff;
+      font-size: 2em;
+      text-align: center;
+      line-height: 60px;
+      border-radius: 8px;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <!-- Hidden video element for webcam feed -->
+  <video id="webcam" autoplay playsinline style="display:none;"></video>
+  <!-- Canvas to draw video feed and landmarks -->
+  <canvas id="canvas"></canvas>
+  <!-- Finger count display -->
+  <div id="fingerCount">0</div>
+
+  <script>
+    // Setup the webcam
+    async function setupCamera() {
+      const video = document.getElementById("webcam");
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      await new Promise((resolve) => video.onloadedmetadata = resolve);
+      return video;
+    }
+
+    // Load MediaPipe Hands via TensorFlow.js hand-pose-detection model
+    async function loadModel() {
+      return await handPoseDetection.createDetector(
+        handPoseDetection.SupportedModels.MediaPipeHands,
+        {
+          runtime: "mediapipe",
+          solutionPath: "https://cdn.jsdelivr.net/npm/@mediapipe/hands"
+        }
+      );
+    }
+
+    // Finger counting function: counts a finger as extended if the fingertip is above its lower joint
+    function countFingers(landmarks) {
+      if (!landmarks) return 0;
+      const tips = [4, 8, 12, 16, 20];  // Thumb, Index, Middle, Ring, Pinky
+      let count = 0;
+      
+      // For index, middle, ring, and pinky fingers
+      for (let i = 1; i < tips.length; i++) {
+        if (landmarks[tips[i]].y < landmarks[tips[i] - 2].y) {
+          count++;
+        }
+      }
+      
+      // Simple logic for thumb (check horizontal position relative to adjacent joint)
+      if (landmarks[4].x > landmarks[3].x) count++;
+      
+      return count;
+    }
+
+    async function main() {
+      const video = await setupCamera();
+      const model = await loadModel();
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      async function detect() {
+        const hands = await model.estimateHands(video);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        if (hands.length > 0) {
+          for (let hand of hands) {
+            const landmarks = hand.keypoints;
+            // Draw landmarks for visualization
+            ctx.fillStyle = "red";
+            for (let point of landmarks) {
+              ctx.beginPath();
+              ctx.arc(point.x, point.y, 5, 0, 2 * Math.PI);
+              ctx.fill();
+            }
+            // Count fingers and update the display
+            const fingerCount = countFingers(landmarks);
+            document.getElementById("fingerCount").innerText = fingerCount;
+          }
+        }
+        requestAnimationFrame(detect);
+      }
+      detect();
+    }
+
+    main();
+  </script>
+</body>
+</html>
